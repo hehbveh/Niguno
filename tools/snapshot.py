@@ -5,9 +5,10 @@ No network and no file I/O here, so it is fully unit-tested. Wire formats follow
 """
 from __future__ import annotations
 
-import gzip
 import hashlib
 import json
+import struct
+import zlib
 from dataclasses import dataclass, field
 
 PARTITION_ROWS = 5000          # rows per tracks-/albums-/albumtracks- shard
@@ -27,8 +28,16 @@ def dumps(value) -> bytes:
 
 
 def gzip_bytes(raw: bytes) -> bytes:
-    """Deterministic gzip (mtime=0) so an unchanged shard keeps its hash and is not re-downloaded."""
-    return gzip.compress(raw, compresslevel=9, mtime=0)
+    """Deterministic gzip so an unchanged shard keeps its hash and is not re-downloaded.
+
+    Framed by hand: gzip.compress() writes a different header byte (OS) depending on the Python version
+    (3.11/3.12 vs 3.10/3.13), which would change every hash whenever the build machine's Python changes.
+    Header: magic, deflate, no flags, mtime 0, XFL 2 (max compression), OS 255 (unknown).
+    """
+    c = zlib.compressobj(9, zlib.DEFLATED, -15, 8)
+    body = c.compress(raw) + c.flush()
+    return (b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x02\xff" + body
+            + struct.pack("<II", zlib.crc32(raw) & 0xFFFFFFFF, len(raw) & 0xFFFFFFFF))
 
 
 def shard_hash(data: bytes) -> str:
