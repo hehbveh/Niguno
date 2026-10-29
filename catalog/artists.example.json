@@ -1,0 +1,13 @@
+[
+  {
+    "id": "UCxxxxxxxxxxxxxxxxxxxxxx",
+    "name": "Artist Name",
+    "displayName": "Artist Name",
+    "altName": "שם האמן",
+    "isFemale": false,
+    "isChasid": false,
+    "isKids": false,
+    "isKidZone": false,
+    "note": "id = the artist's YouTube Music channel id (music.youtube.com/channel/UC...)"
+  }
+]

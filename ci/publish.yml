@@ -1,0 +1,88 @@
+name: Crawl, build and publish
+
+on:
+  push:
+    branches: [main]
+    paths: ["catalog/**", "tools/**", "tests/**", ".github/workflows/**"]
+  schedule:
+    - cron: "17 3 * * *"        # nightly: pick up new releases of approved artists
+  workflow_dispatch:
+    inputs:
+      full_recrawl:
+        description: "Re-crawl every artist now (ignores the weekly rotation and the 300-artist cap)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0            # build.py derives the whitelist version from catalog/ commit time
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore previous crawl data and upstream copy
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            crawl
+            catalog/upstream
+          key: crawl-${{ github.run_id }}
+          restore-keys: crawl-
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Pull upstream artist list
+        run: python tools/upstream.py
+
+      - name: Crawl YouTube Music
+        run: |
+          pip install --quiet ytmusicapi==1.12.3
+          if [ "${{ inputs.full_recrawl }}" = "true" ]; then
+            python tools/crawl.py
+          else
+            # new artists first, then anything older than a week; capped so a big catalog refreshes over days
+            python tools/crawl.py --stale-days 7 --max-artists 300
+          fi
+
+      - name: Save crawl data and upstream copy
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            crawl
+            catalog/upstream
+          key: crawl-${{ github.run_id }}
+
+      - name: Build site
+        run: |
+          python tools/build.py --out public \
+            --previous-site "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

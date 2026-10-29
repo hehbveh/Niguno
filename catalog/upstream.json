@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "baseUrl": "https://content.zemer.io",
+  "maxShrinkPercent": 20,
+  "note": "Zemer's public artist list (used with the Zemer team's OK). catalog/artists.json overrides it."
+}
