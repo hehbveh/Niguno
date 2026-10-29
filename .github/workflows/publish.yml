@@ -1,0 +1,65 @@
+name: Crawl catalog
+
+# Pulls Zemer's artist list and crawls YouTube Music, then commits the results (catalog/upstream/, crawl/)
+# to main. Cloudflare Pages sees that commit and rebuilds the site (build command: python3 tools/build.py).
+
+on:
+  push:
+    branches: [main]
+    paths: ["catalog/artists.json", "catalog/blocked.json", "catalog/upstream.json", "tools/**", "tests/**"]
+  schedule:
+    - cron: "17 3 * * *"        # nightly: pick up new singers and new releases
+  workflow_dispatch:
+    inputs:
+      full_recrawl:
+        description: "Re-crawl every artist now (ignores the weekly rotation and the 300-artist cap)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write               # to commit the crawl results
+
+concurrency:
+  group: crawl
+  cancel-in-progress: false
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Pull upstream artist list
+        run: python tools/upstream.py
+
+      - name: Crawl YouTube Music
+        run: |
+          pip install --quiet ytmusicapi==1.12.3
+          if [ "${{ inputs.full_recrawl }}" = "true" ]; then
+            python tools/crawl.py
+          else
+            # new artists first, then anything older than a week; capped so a big catalog fills in over days
+            python tools/crawl.py --stale-days 7 --max-artists 300
+          fi
+
+      - name: Check the site builds
+        run: python tools/build.py --out /tmp/site-check
+
+      - name: Commit results
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A crawl catalog/upstream 2>/dev/null || true
+          if git diff --cached --quiet; then echo "nothing changed"; exit 0; fi
+          git commit -m "Catalog update $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3; do git pull --rebase origin main && git push origin HEAD:main && exit 0; sleep 5; done
+          exit 1
