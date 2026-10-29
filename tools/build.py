@@ -77,6 +77,7 @@ def main() -> int:
         p = out / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(data)
+    (out / "404.html").write_text("Not found\n", encoding="utf-8")  # real 404s on Cloudflare Pages
     print(json.dumps(snap.stats), f"-> {out} ({len(snap.manifest['shards'])} shards, v={snap.manifest['v']})")
     if snap.stats["crawledArtists"] < snap.stats["artists"]:
         print("warning: some artists have no crawl data yet (run tools/crawl.py)", file=sys.stderr)

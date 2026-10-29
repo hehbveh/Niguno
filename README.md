@@ -1,6 +1,6 @@
 # Player backend (static)
 
-Everything the music app downloads, published as static files on GitHub Pages:
+Everything the music app downloads, published as static files on Cloudflare Pages:
 
 | Published path | What it is |
 |---|---|
@@ -27,9 +27,10 @@ device. There is no live server. The exact wire format the app expects is in
    singles) into `crawl/<id>.json`. Only those channels are read; nothing else enters the catalogue.
 3. **`tools/build.py`** turns catalog + crawl data into `public/` (deterministic: unchanged data gives
    byte-identical shards, so devices only download what changed).
-4. **GitHub Actions** (`.github/workflows/publish.yml`) runs tests, crawls, builds and deploys
-   - on every push that changes the catalog,
-   - nightly, to pick up approved artists' new releases,
+4. **GitHub Actions** (`.github/workflows/publish.yml`) runs tests, pulls the list and crawls, and commits the
+   results; **Cloudflare Pages** rebuilds the site from each commit. The crawl runs
+   - on every push that changes the catalog or tools,
+   - nightly, to pick up new singers and approved artists' new releases,
    - manually ("Run workflow", optionally a full re-crawl).
 
 Zemer's new singers arrive automatically with the nightly run; adding or removing one of our own = edit
@@ -39,14 +40,20 @@ Safety: if the upstream list can't be fetched, comes back empty, or shrinks by m
 `maxShrinkPercent` (20%), the last good copy is kept (the app deletes artists that vanish from the list).
 Large catalogs are crawled gradually: new artists first, then anything older than a week, 300 per run.
 
-## One-time setup
+## One-time setup (Cloudflare Pages)
 
-1. Create a GitHub repository and push this folder to `main`.
-   - GitHub Pages on a **private** repo needs a paid GitHub plan; a public repo is free. The published
-     catalogue is public either way (players download it).
-2. Repository → Settings → Pages → Source: **GitHub Actions**.
-3. Push. The first run pulls Zemer's list and starts crawling (300 artists per run, so a large list fills in over a few nights; use "Run workflow" with full re-crawl to do it all at once). Your own additions go in `catalog/artists.json` (see `catalog/artists.example.json`).
-4. The site appears at `https://<user>.github.io/<repo>/`. That URL is what the app build uses.
+GitHub Actions (`.github/workflows/publish.yml`) pulls Zemer's list and crawls YouTube Music, then commits the
+results (`catalog/upstream/`, `crawl/`) to `main`. Cloudflare Pages is connected to this repo and rebuilds the
+site on every commit. Its build only runs `tools/build.py` (standard library, a few seconds); the site files
+(`public/`) are generated, never committed.
+
+1. GitHub: the workflow must live at `.github/workflows/publish.yml`. Actions → Crawl catalog → Run workflow
+   (each run crawls up to 300 not-yet-crawled artists; run it a few times, or wait a few nights).
+2. Cloudflare → Workers & Pages → Create → Pages → connect this repo:
+   - Framework preset: None
+   - Build command: `python3 tools/build.py --out public --previous-site https://niguno.pages.dev`
+   - Build output directory: `public`
+3. The site is `https://niguno.pages.dev/`; check `/whitelist/` and `/subset/manifest`.
 
 ## Local use
 
